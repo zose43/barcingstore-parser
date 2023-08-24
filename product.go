@@ -7,13 +7,13 @@ type Product struct {
 	Images      []struct {
 		Url string `json:"url"`
 	} `json:"images,omitempty"`
-	Options []struct {
-		Title string `json:"title"`
-	} `json:"option_names,omitempty"`
-	Variants []ProductOption
+	Options  []*Option `json:"option_names,omitempty"`
+	Variants []*ProductOption
 }
 
-//todo move option to separate struct
+type Option struct {
+	Title string `json:"title"`
+}
 
 type ProductOption struct {
 	SKU       string `json:"sku"`
