@@ -1,14 +1,22 @@
 package main
 
+type Goods struct {
+	Status string     `json:"status"`
+	Items  []*Product `json:"products"`
+}
+
 type Product struct {
 	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
+	Description string `json:"short_description,omitempty"`
 	Url         string `json:"url"`
-	Images      []struct {
-		Url string `json:"url"`
-	} `json:"images,omitempty"`
-	Options  []*Option `json:"option_names,omitempty"`
-	Variants []*ProductOption
+	Images      []*Images
+	Options     []Option         `json:"option_names,omitempty"`
+	Variants    []*ProductOption `json:"variants,omitempty"`
+}
+
+type Images struct {
+	Url      string `json:"original_url"`
+	Position int    `json:"position"`
 }
 
 type Option struct {
@@ -16,8 +24,10 @@ type Option struct {
 }
 
 type ProductOption struct {
+	Title     string `json:"title"`
 	SKU       string `json:"sku"`
 	Available bool   `json:"available"`
-	Price     int    `json:"price"`
-	Amount    int    `json:"amount"`
+	Price     string `json:"price"`
+	Amount    int    `json:"quantity"`
+	ImageID   int    `json:"image_id"`
 }
