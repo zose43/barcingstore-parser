@@ -16,7 +16,10 @@ import (
 
 const Purpose = "https://barkingstore.ru"
 
-var prods []*Product
+var (
+	prods      []*Product
+	catCounter uint
+)
 
 func main() {
 	ft := convertTo()
@@ -36,11 +39,10 @@ func main() {
 	c := getCollector()
 	c2 := clone()
 
-	c.OnRequest(requesting)
 	c.OnError(processError)
 	c.OnResponse(response)
 	// handle menu pages
-	c.OnHTML(".subcol1 .menu-link", func(e *colly.HTMLElement) {
+	c.OnHTML(".header-middle .subcol1", func(e *colly.HTMLElement) {
 		grabCategories(e, c2)
 	})
 	c2.OnError(processError)
@@ -62,7 +64,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("done, %d items\n", len(prods))
+	fmt.Printf("done, %d processed categories, %d saved products\n", catCounter, len(prods))
 }
 
 func getCollector() *colly.Collector {
@@ -72,10 +74,6 @@ func getCollector() *colly.Collector {
 		colly.MaxDepth(1))
 	c.SetRequestTimeout(8 * time.Second)
 	return c
-}
-
-func requesting(r *colly.Request) {
-	fmt.Println("Visiting:", r.URL)
 }
 
 func processError(r *colly.Response, err error) {
@@ -101,8 +99,11 @@ func grabProducts(e *colly.HTMLElement, c *colly.Collector) {
 	id := e.Attr("data-product-id")
 	prodPage := fmt.Sprintf("%s/%s.json", endpoint, id)
 
-	err := c.Visit(prodPage)
-	visitError(err, e.Request.URL)
+	repeat, _ := c.HasVisited(prodPage)
+	if !repeat {
+		err := c.Visit(prodPage)
+		visitError(err, e.Request.URL)
+	}
 }
 
 func filename(format string) string {
@@ -116,27 +117,36 @@ func visitError(err error, u any) {
 }
 
 func handleProductJSON(data []byte) {
-	//todo unmarshall empty struct
-	var prod Product
-	err := json.Unmarshal(data, &prod)
+	var goods Goods
+	err := json.Unmarshal(data, &goods)
 	if err != nil {
 		fmt.Printf("can't unmarshall data %s\n", err)
 		return
 	}
-	prods = append(prods, &prod)
+
+	if goods.Status != "ok" {
+		fmt.Printf("invalid JSON status")
+		return
+	}
+	for _, prod := range goods.Items {
+		//todo remove html from description
+		prods = append(prods, prod)
+	}
 }
 
 func grabCategories(e *colly.HTMLElement, c *colly.Collector) {
-	//todo each iterate only 1 item
-	var cats []string
-	e.DOM.Each(func(_ int, s *goquery.Selection) {
-		cat := e.Request.AbsoluteURL(s.AttrOr("href", ""))
-		cats = append(cats, cat)
-	})
-	for _, cat := range cats {
+	var subcats []string
+	e.DOM.Find(".menu-link").
+		Each(func(_ int, s *goquery.Selection) {
+			cat := e.Request.AbsoluteURL(s.AttrOr("href", ""))
+			subcats = append(subcats, cat)
+		})
+	for _, cat := range subcats {
 		if len(cat) > 0 {
+			fmt.Println("visiting category:", cat)
 			err := c.Visit(cat)
 			visitError(err, cat)
+			catCounter++
 		}
 	}
 }
