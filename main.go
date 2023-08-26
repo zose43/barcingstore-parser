@@ -1,8 +1,8 @@
 package main
 
 import (
-	"encoding/csv"
 	"encoding/json"
+	"encoding/xml"
 	"flag"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
@@ -19,22 +19,18 @@ const Purpose = "https://barkingstore.ru"
 var (
 	prods      []*Product
 	catCounter uint
+	format     string
 )
 
 func main() {
-	ft := convertTo()
-	file, err := os.Create(filename(ft))
+	//todo download images, output dir flag
+	mustConvertTo()
+	fname := filename()
+	file, err := os.Create(fname)
 	if err != nil {
-		log.Fatal("can't create file")
+		log.Fatal("can't create export file")
 	}
 	defer func() { _ = file.Close() }()
-
-	writer := csv.NewWriter(file)
-	err = writer.Write([]string{"Url", "Title"})
-	if err != nil {
-		log.Print("can't write csv file")
-	}
-	defer writer.Flush()
 
 	c := getCollector()
 	c2 := clone()
@@ -55,7 +51,7 @@ func main() {
 			fmt.Printf("%s %d", r.Request.URL, r.StatusCode)
 		}
 		if val := r.Headers.Get("Content-Type"); strings.Contains(val, "application/json") {
-			handleProductJSON(r.Body)
+			handleJSON(r.Body)
 		}
 	})
 
@@ -64,6 +60,10 @@ func main() {
 		log.Fatal(err)
 	}
 
+	err = exportFile(file)
+	if err != nil {
+		fmt.Printf("can't export document %s", err)
+	}
 	fmt.Printf("done, %d processed categories, %d saved products\n", catCounter, len(prods))
 }
 
@@ -89,9 +89,12 @@ func response(r *colly.Response) {
 	}
 }
 
-func convertTo() string {
-	format := flag.String("f", "csv", "format of document")
-	return *format
+func mustConvertTo() {
+	flag.StringVar(&format, "f", "json", "document format")
+	flag.Parse()
+	if format != "json" && format != "xml" {
+		log.Fatalf("not suppored document format %s", format)
+	}
 }
 
 func grabProducts(e *colly.HTMLElement, c *colly.Collector) {
@@ -106,8 +109,9 @@ func grabProducts(e *colly.HTMLElement, c *colly.Collector) {
 	}
 }
 
-func filename(format string) string {
-	return path.Join("xxx", fmt.Sprintf("export.%s", format))
+func filename() string {
+	dt := time.Now().Format(time.DateOnly)
+	return path.Join("export", fmt.Sprintf("export-%s.%s", dt, format))
 }
 
 func visitError(err error, u any) {
@@ -116,7 +120,7 @@ func visitError(err error, u any) {
 	}
 }
 
-func handleProductJSON(data []byte) {
+func handleJSON(data []byte) {
 	var goods Goods
 	err := json.Unmarshal(data, &goods)
 	if err != nil {
@@ -129,7 +133,7 @@ func handleProductJSON(data []byte) {
 		return
 	}
 	for _, prod := range goods.Items {
-		//todo remove html from description
+		prod.cleanDescription()
 		prods = append(prods, prod)
 	}
 }
@@ -154,4 +158,42 @@ func grabCategories(e *colly.HTMLElement, c *colly.Collector) {
 func clone() *colly.Collector {
 	c := getCollector()
 	return c.Clone()
+}
+
+func exportFile(file *os.File) error {
+	switch format {
+	case "xml":
+		return saveInXML(file)
+	case "json":
+		return saveInJSON(file)
+	}
+	return nil
+}
+
+func saveInXML(f *os.File) error {
+	rawData, err := xml.MarshalIndent(prods, "", " ")
+	if err != nil {
+		return err
+	}
+
+	_, _ = f.WriteString("<Products>")
+	_, err = f.Write(rawData)
+	if err != nil {
+		return err
+	}
+	_, _ = f.WriteString("</Products>")
+	return nil
+}
+
+func saveInJSON(f *os.File) error {
+	rawData, err := json.Marshal(prods)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(rawData)
+	if err != nil {
+		return err
+	}
+	return nil
 }
