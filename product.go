@@ -30,6 +30,7 @@ func (p *Product) cleanDescription() {
 }
 
 type Images struct {
+	Id       int    `json:"id" xml:"id"`
 	Url      string `json:"original_url" xml:"original_url"`
 	Position int    `json:"position" xml:"position"`
 }

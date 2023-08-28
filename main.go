@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,15 +23,19 @@ var (
 	prods      []*Product
 	catCounter uint
 	format     string
+	outputDir  string
 )
 
 func main() {
-	//todo download images, output dir flag
+	// todo export-results in archive
 	mustConvertTo()
-	fname := filename()
+	fname, err := filename()
+	if err != nil {
+		log.Fatalf("can't create export directory %s", err)
+	}
 	file, err := os.Create(fname)
 	if err != nil {
-		log.Fatal("can't create export file")
+		log.Fatalf("can't create export file %s", err)
 	}
 	defer func() { _ = file.Close() }()
 
@@ -64,6 +71,10 @@ func main() {
 	if err != nil {
 		fmt.Printf("can't export document %s", err)
 	}
+	err = downloadImages()
+	if err != nil {
+		fmt.Printf("can't download images %s\n", err)
+	}
 	fmt.Printf("done, %d processed categories, %d saved products\n", catCounter, len(prods))
 }
 
@@ -91,6 +102,7 @@ func response(r *colly.Response) {
 
 func mustConvertTo() {
 	flag.StringVar(&format, "f", "json", "document format")
+	flag.StringVar(&outputDir, "d", "export", "output directory")
 	flag.Parse()
 	if format != "json" && format != "xml" {
 		log.Fatalf("not suppored document format %s", format)
@@ -109,9 +121,15 @@ func grabProducts(e *colly.HTMLElement, c *colly.Collector) {
 	}
 }
 
-func filename() string {
+func filename() (string, error) {
 	dt := time.Now().Format(time.DateOnly)
-	return path.Join("export", fmt.Sprintf("export-%s.%s", dt, format))
+	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
+		err = os.MkdirAll(outputDir, 0744)
+		if err != nil {
+			return "", err
+		}
+	}
+	return path.Join(outputDir, fmt.Sprintf("export-%s.%s", dt, format)), nil
 }
 
 func visitError(err error, u any) {
@@ -195,5 +213,42 @@ func saveInJSON(f *os.File) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func downloadImages() error {
+	wg := sync.WaitGroup{}
+	dirname := path.Join(outputDir, "images")
+	err := os.MkdirAll(dirname, 0744)
+	if err != nil {
+		return err
+	}
+
+	for _, prod := range prods {
+		for _, image := range prod.Images {
+			wg.Add(1)
+			go func(u string, id int) {
+				defer wg.Done()
+				resp, err := http.Get(u)
+				if err != nil {
+					fmt.Printf("can't get image %s\n", err)
+					return
+				}
+
+				bts, err := io.ReadAll(resp.Body)
+				if err != nil {
+					fmt.Printf("can't read response %s\n", err)
+					return
+				}
+				fname := fmt.Sprintf("image_%d%s", id, path.Ext(u))
+				err = os.WriteFile(path.Join(dirname, fname), bts, 0755)
+				if err != nil {
+					fmt.Printf("can't save image %s\n", err)
+				}
+			}(image.Url, image.Id)
+		}
+	}
+
+	wg.Wait()
 	return nil
 }
