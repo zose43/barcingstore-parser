@@ -39,21 +39,25 @@ func main() {
 	}
 	defer func() { _ = file.Close() }()
 
-	c := getCollector()
+	c1 := getCollector()
 	c2 := clone()
+	c3 := clone()
 
-	c.OnError(processError)
-	c.OnResponse(response)
+	c1.OnError(processError)
+	c1.OnResponse(response)
 	// handle menu pages
-	c.OnHTML(".header-middle .subcol1", func(e *colly.HTMLElement) {
+	c1.OnHTML(".header-middle .subcol1", func(e *colly.HTMLElement) {
 		grabCategories(e, c2)
 	})
 	c2.OnError(processError)
-	// create product-json endpoints list and handle json
+	// create product-json endpoints
 	c2.OnHTML(".product-item form", func(e *colly.HTMLElement) {
-		grabProducts(e, c2)
+		grabProducts(e, c3)
 	})
-	c2.OnResponse(func(r *colly.Response) {
+	c2.OnResponse(response)
+	// handle json
+	c3.OnError(processError)
+	c3.OnResponse(func(r *colly.Response) {
 		if r.StatusCode != 200 {
 			fmt.Printf("%s %d", r.Request.URL, r.StatusCode)
 		}
@@ -62,11 +66,14 @@ func main() {
 		}
 	})
 
-	err = c.Visit(Purpose)
+	err = c1.Visit(Purpose)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	c1.Wait()
+	c2.Wait()
+	c3.Wait()
 	err = exportFile(file)
 	if err != nil {
 		fmt.Printf("can't export document %s", err)
@@ -82,7 +89,16 @@ func getCollector() *colly.Collector {
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"),
 		colly.AllowedDomains("barkingstore.ru"),
+		colly.Async(true),
 		colly.MaxDepth(1))
+	err := c.Limit(&colly.LimitRule{
+		DomainRegexp: `barkingstore\.ru`,
+		RandomDelay:  300 * time.Millisecond,
+		Parallelism:  6,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 	c.SetRequestTimeout(8 * time.Second)
 	return c
 }
@@ -240,6 +256,8 @@ func downloadImages() error {
 					fmt.Printf("can't read response %s\n", err)
 					return
 				}
+				defer func() { _ = resp.Body.Close() }()
+
 				fname := fmt.Sprintf("image_%d%s", id, path.Ext(u))
 				err = os.WriteFile(path.Join(dirname, fname), bts, 0755)
 				if err != nil {
