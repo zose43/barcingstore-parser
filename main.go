@@ -27,7 +27,7 @@ var (
 )
 
 func main() {
-	// todo export-results in archive
+	// todo export-results in archive(use flag) or save in files
 	mustConvertTo()
 	fname, err := filename()
 	if err != nil {
@@ -59,7 +59,7 @@ func main() {
 	c3.OnError(processError)
 	c3.OnResponse(func(r *colly.Response) {
 		if r.StatusCode != 200 {
-			fmt.Printf("%s %d", r.Request.URL, r.StatusCode)
+			fmt.Printf("%s %d\n", r.Request.URL, r.StatusCode)
 		}
 		if val := r.Headers.Get("Content-Type"); strings.Contains(val, "application/json") {
 			handleJSON(r.Body)
@@ -81,6 +81,10 @@ func main() {
 	err = downloadImages()
 	if err != nil {
 		fmt.Printf("can't download images %s\n", err)
+	}
+	err = makeZip()
+	if err != nil {
+		fmt.Printf("can't make zip %s\n", err)
 	}
 	fmt.Printf("done, %d processed categories, %d saved products\n", catCounter, len(prods))
 }
@@ -112,7 +116,7 @@ func processError(r *colly.Response, err error) {
 
 func response(r *colly.Response) {
 	if r.StatusCode != 200 {
-		fmt.Printf("%s %d", r.Request.URL, r.StatusCode)
+		fmt.Printf("%s %d\n", r.Request.URL, r.StatusCode)
 	}
 }
 
@@ -233,6 +237,7 @@ func saveInJSON(f *os.File) error {
 }
 
 func downloadImages() error {
+	//todo download if flag exist
 	wg := sync.WaitGroup{}
 	dirname := path.Join(outputDir, "images")
 	err := os.MkdirAll(dirname, 0744)
